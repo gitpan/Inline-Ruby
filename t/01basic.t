@@ -8,9 +8,14 @@
 
 use Test;
 use Data::Dumper;
+use IO::Handle;
+
+
 BEGIN { plan tests => 15 }
 END {print "not ok 1\n" unless $loaded;}
-use Inline Ruby;
+use Inline 'Ruby';
+IO::Handle->autoflush(1);
+
 $loaded = 1;
 print "ok 1\n";
 
@@ -43,13 +48,19 @@ __END__
 __Ruby__
 
 class Stumpme
+  # This method does nothing important but happens to fix the call of
+  # inst_method() upon first run - I'll investigate the exact problem
+  # further -- Shlomi Fish
+  def myfunc()
+    return 3098;
+  end
   def inst_method(*args)
-    args.each { |x| print "ok #{x}\n" }
+    args.each { |x| print "ok #{x}\n" ; $stdout.flush; }
   end
   def Stumpme.class_method(*args)
-    args.each { |x| print "ok #{x}\n" }
+    args.each { |x| print "ok #{x}\n" ; $stdout.flush; }
   end
-  def inst_iterator(*args) 
+  def inst_iterator(*args)
     args.each { |x| yield x }	# calls back into Perl
   end
   def Stumpme.class_iterator(*args)

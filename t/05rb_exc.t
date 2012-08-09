@@ -1,45 +1,53 @@
 #!/usr/bin/perl -w
 
-use Test;
-BEGIN { plan tests => 8 }
+use Test::More tests => 8;
 
 use strict;
 use Data::Dumper;
 use Inline::Ruby qw(rb_eval);
 
-my @exc = (
-    ['divided by 0', 'ZeroDivisionError'],
-    ["compile error\n(eval): parse error", 'SyntaxError'],
-);
-
-my $n = 0;
+# TEST:$n=2;
 sub e {
-    my $str = shift;
+    my ($str, $exc) = @_;
     eval { rb_eval($str) };
     return unless $@;
     my $x = $@;
 
     my $inspect = sprintf("#<%s: %s>", $x->type, $x->message);
 
+    # TEST*$n
     # Methods:
-    ok($x->message, $exc[$n][0]);
-    print Dumper $x->message;
+    like ($x->message, $exc->[0], 'Message is right');
+    # TODO : Apparently you cannot mix and match prints with
+    # evaling ruby code, so we need to find a way to fix it. Meanwhile,
+    # I am commenting-out the prints.
+    # print Dumper $x->message;
 
-    ok($x->type, $exc[$n][1]);
-    print Dumper $x->type;
+    # TEST*$n
+    is ($x->type, $exc->[1], 'Type is right');
+    # print Dumper $x->type;
 
-    ok($x->inspect, $inspect);
-    print Dumper $x->inspect;
+    # TEST*$n
+    is ($x->inspect, $inspect, 'Inspect is right');
+    # print Dumper $x->inspect;
 
     # Stringification:
-    ok("$x", "$inspect\n");
-    print "Stringified: '$x'\n";
+    # TEST*$n
+    is ("$x", "$inspect\n", 'Stringification');
+    # print "Stringified: '$x'\n";
 
     # Backtrace (not tested)
-    print Dumper $x->backtrace;
+    # print Dumper $x->backtrace;
 
-    $n++;
+    return;
 }
 
-e "1/0";	# div by zero
-e "1/";		# parse error
+# div by zero
+e(  "1/0",
+    [qr/divided by 0/, 'ZeroDivisionError']
+);
+
+# parse error
+e(  "1/",
+    [qr/compile error/, 'SyntaxError'],
+);
