@@ -9,7 +9,7 @@ require DynaLoader;
 require Exporter;
 use vars qw(@ISA $VERSION @EXPORT_OK);
 
-$VERSION = '0.04';
+$VERSION = '0.05';
 @ISA = qw(Inline DynaLoader Exporter);
 @EXPORT_OK = qw(rb_eval
 		rb_call_function
@@ -28,7 +28,7 @@ sub import {
 
 sub dl_load_flags { 0x01 }
 Inline::Ruby->bootstrap($VERSION);
-eval_support_code();
+_eval_support_code();
 
 #==============================================================================
 # Register Ruby.pm as a valid Inline language
@@ -64,7 +64,7 @@ sub validate {
 	    $o->{ILSM}{regexp} = qr/$value/;
 	}
 	elsif ($key eq 'BIND_TYPE' or $key eq 'BIND_TYPES') {
-	    $o->add_list($o->{ILSM}, 'bindto', $value, []);
+	    $o->_add_list($o->{ILSM}, 'bindto', $value, []);
 	}
 	elsif ($key eq 'ITER') {
 	    $o->{ILSM}{$key} = $value;
@@ -75,7 +75,7 @@ sub validate {
 	    my %filters;
 	    for my $val (@$value) {
 		if (ref($val) eq 'CODE') {
-		    $o->add_list($o->{ILSM}, $key, $val, []);
+		    $o->_add_list($o->{ILSM}, $key, $val, []);
 	        }
 		else {
 		    eval { require Inline::Filters };
@@ -86,7 +86,7 @@ sub validate {
 		    if (defined $filters{$val}) {
 			my $filter = Inline::Filters->new($val,
 							  $filters{$val});
-			$o->add_list($o->{ILSM}, $key, $filter, []);
+			$o->_add_list($o->{ILSM}, $key, $filter, []);
 		    }
 		    else {
 			croak "Invalid filter $val specified.";
@@ -101,15 +101,15 @@ sub validate {
     }
 }
 
-sub usage_validate {
+sub _usage_validate {
     return "Invalid value for config option $_[0]";
 }
 
-sub add_list {
+sub _add_list {
     my $o = shift;
     my ($ref, $key, $value, $default) = @_;
     $value = [$value] unless ref $value;
-    croak usage_validate($key) unless ref($value) eq 'ARRAY';
+    croak _usage_validate($key) unless ref($value) eq 'ARRAY';
     foreach my $val (@$value) {
 	if (defined $val) {
 	    push @{$ref->{$key}}, $val;
@@ -120,11 +120,13 @@ sub add_list {
     }
 }
 
-sub add_string {
+=begin Removed
+
+sub _add_string {
     my $o = shift;
     my ($ref, $key, $value, $default) = @_;
     $value = [$value] unless ref $value;
-    croak usage_validate($key) unless ref($value) eq 'ARRAY';
+    croak _usage_validate($key) unless ref($value) eq 'ARRAY';
     foreach my $val (@$value) {
 	if (defined $val) {
 	    $ref->{$key} .= " $val";
@@ -135,11 +137,11 @@ sub add_string {
     }
 }
 
-sub add_text {
+sub _add_text {
     my $o = shift;
     my ($ref, $key, $value, $default) = @_;
     $value = [$value] unless ref $value;
-    croak usage_validate($key) unless ref($value) eq 'ARRAY';
+    croak _usage_validate($key) unless ref($value) eq 'ARRAY';
     for my $val (@$value) {
 	if (defined $val) {
 	    chomp($val);
@@ -150,6 +152,11 @@ sub add_text {
 	}
     }
 }
+
+=end Removed
+
+=cut
+
 
 #==========================================================================
 # Print a short information section if PRINT_INFO is enabled.
@@ -185,7 +192,7 @@ sub info {
     return $info;
 }
 
-sub eval_support_code {
+sub _eval_support_code {
     rb_eval(<<'END');
 def inline_ruby_class_grokker(*classes)
     if classes == []
@@ -373,11 +380,21 @@ END
 # and we inherit from Inline::Ruby::Object so the Perverse Ruby Programmer
 # can still create dynamic methods on-the-fly using its AUTOLOAD.
 #==============================================================================
+
+my %bound_pkgs;
+
 sub rb_bind_class {
     my $pkg  	= shift;	# The perl class to use
     my $class	= shift;	# The ruby class to wrap
     my $iter	= shift;	# The name to use for 'iter'
     my %methods = @_;
+
+    $pkg =~ s/\Amain:://;
+    if (exists($bound_pkgs{$pkg}))
+    {
+        return;
+    }
+    $bound_pkgs{$pkg} = 1;
 
     my $bind = <<END;
 package ${pkg};
@@ -393,9 +410,12 @@ sub $iter {
 }
 END
 
+    my %bound_methods;
+
     for my $method (@{$methods{methods}}) {
 	next unless $method =~ /^\w+$/;
 	next if $method eq 'new';	# handled specially
+    next if $bound_methods{$method}++;
 	$bind .= <<END;
 sub $method {	# ${class}::${method}
     splice \@_, 1, 0, "$method";
@@ -405,6 +425,7 @@ END
     }
     for my $method (@{$methods{imethods}}) {
 	next unless $method =~ /^\w+$/;
+    next if $bound_methods{$method}++;
 	$bind .= <<END;
 sub $method {	# ${class}::${method}
     splice \@_, 1, 0, "$method";
